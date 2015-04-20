@@ -2118,6 +2118,7 @@ angular.module('mm.addons.files')
         root = $stateParams.root,
         title,
         promise;
+    $scope.count = -1;
     if (!path) {
         if (root === 'site') {
             promise = $mmaFiles.getSiteFiles();
@@ -2146,6 +2147,7 @@ angular.module('mm.addons.files')
         var files = data[0],
             title = data[1];
         $scope.files = files.entries;
+        $scope.count = files.count;
         $scope.title = title;
     }, function() {
         $mmUtil.showErrorModal('mm.addons.files.couldnotloadfiles', true);
@@ -2206,7 +2208,8 @@ angular.module('mm.addons.files')
         var deferred = $q.defer();
         $mmSite.read('core_files_get_files', params).then(function(result) {
             var data = {
-                entries: []
+                entries: [],
+                count: 0
             };
             if (typeof result.files == 'undefined') {
                 deferred.reject();
@@ -2230,6 +2233,7 @@ angular.module('mm.addons.files')
                 }
                 entry.link = JSON.stringify(entry.link);
                 entry.linkId = md5.createHash(entry.link);
+                data.count += 1;
                 data.entries.push(entry);
             });
             deferred.resolve(data);
@@ -2244,7 +2248,7 @@ angular.module('mm.addons.files')
         params.filearea = "private";
         params.contextid = -1;
         params.contextlevel = "user";
-        params.instanceid = $mmSite.getCurrentSiteInfo().userid;
+        params.instanceid = $mmSite.getInfo().userid;
         return self.getFiles(params);
     };
         self.getSiteFiles = function() {
