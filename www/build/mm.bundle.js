@@ -1130,7 +1130,7 @@ angular.module('mm.core')
                 try {
                     if ($cordovaNetwork.isOnline()) {
                         $log.debug('File ' + downloadURL + ' not downloaded. Lets download.');
-                        return $mmWS.downloadFile(downloadURL, path.file);
+                        return $mmWS.downloadFile(downloadURL, path.file).toInternalURL();
                     } else {
                         $log.debug('File ' + downloadURL + ' not downloaded, but the device is offline.');
                         return downloadURL;
@@ -1524,18 +1524,20 @@ angular.module('mm.core')
         return result;
     };
         self.downloadFile = function(url, path, background) {
-        $log.debug('Download file '+url);
-        return $mmFS.getBasePath().then(function(basePath) {
+        var deferred = $q.defer();
+        $log.debug('Downloading file ' + url);
+        $mmFS.getBasePath().then(function(basePath) {
             var absolutePath = basePath + path;
-            return $cordovaFileTransfer.download(url, absolutePath, {}, true).then(function(result) {
-                $log.debug('Success downloading file ' + url + ' to '+absolutePath);
-                return result.toInternalURL();
+            return $cordovaFileTransfer.download(url, absolutePath, { encodeURI: false }, true).then(function(result) {
+                $log.debug('Success downloading file ' + url + ' to ' + absolutePath);
+                deferred.resolve(result);
             }, function(err) {
-                $log.error('Error downloading file '+url);
-                $log.error(err);
-                return $q.reject();
+                $log.error('Error downloading ' + url + ' to ' + absolutePath);
+                $log.error(JSON.stringify(err));
+                deferred.reject(err);
             });
         });
+        return deferred.promise;
     };
         self.uploadFile = function(uri, options, presets) {
         $log.info('Trying to upload file (' + uri.length + ' chars)');
@@ -2206,7 +2208,7 @@ angular.module('mm.addons.files')
     }
     fetchFiles(root, path);
     $scope.download = function(file) {
-        var downloadURL = $mmUtil.fixPluginfileURL(file.url),
+        var downloadURL = $mmSite.fixPluginfileURL(file.url),
             siteId = $mmSite.getId(),
             linkId = file.linkId,
             filename = $mmFS.normalizeFileName(file.filename),
@@ -2215,11 +2217,12 @@ angular.module('mm.addons.files')
         $log.debug("Starting download of Moodle file: " + downloadURL);
         $mmFS.createDir(directory).then(function() {
             $log.debug("Downloading Moodle file to " + filePath + " from URL: " + downloadURL);
-            $mmWS.downloadFile(downloadURL, filePath).then(function(fullpath) {
-                $log.debug("Download of content finished " + fullpath + " URL: " + downloadURL);
-                $mmUtil.openFile(fullpath);
+            $mmWS.downloadFile(downloadURL, filePath).then(function(fileEntry) {
+                $log.debug("Download of content finished " + fileEntry.toURL() + " URL: " + downloadURL);
+                $mmUtil.openFile(fileEntry.toURL());
             }, function() {
-                $log.error('Error downloading ' + fullpath + ' URL: ' + downloadURL);
+                $log.error('Error downloading from URL: ' + downloadURL);
+                $mmUtil.showErrorModal('mm.addons.files.errorwhiledownloading', true);
             });
         }, function() {
             $log.error('Error while creating the directory ' + directory);
@@ -2284,16 +2287,13 @@ angular.module('mm.addons.files')
                             $translate('loading').then(function(loadingString) {
                                 $mmUtil.showModalLoading(loadingString);
                             });
-                            var promises = $mmaFiles.uploadMedia(medias);
-
-                            $q.all(promises).then(function() {
+                            $mmaFiles.uploadMedia(medias).then(function() {
                                 fetchFiles(root, path, true);
                                 $mmUtil.closeModalLoading();
                             }, function() {
                                 $mmUtil.closeModalLoading();
                                 $mmUtil.showErrorModal('mm.addons.files.errorwhileuploading', true);
                             });
-
                         }, function() {
                         });
                     } else if (index === 3) {
@@ -2302,9 +2302,7 @@ angular.module('mm.addons.files')
                             $translate('loading').then(function(loadingString) {
                                 $mmUtil.showModalLoading(loadingString);
                             });
-                            var promises = $mmaFiles.uploadMedia(medias);
-
-                            $q.all(promises).then(function() {
+                            $mmaFiles.uploadMedia(medias).then(function() {
                                 fetchFiles(root, path, true);
                                 $mmUtil.closeModalLoading();
                             }, function() {
