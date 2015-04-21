@@ -720,6 +720,16 @@ angular.module('mm.core')
                 return deferred.promise;
             }
             method = checkDeprecatedFunction(method);
+            if (self.getInfo() && !self.wsAvailable(method, false)) {
+                if (self.wsAvailable(mmCoreWSPrefix + method, false)) {
+                    $log.info("Using compatibility WS method '" + mmCoreWSPrefix + method + "'");
+                    method = mmCoreWSPrefix + method;
+                } else {
+                    $log.error("WS function '" + method + "' is not available, even in compatibility mode.");
+                    $mmLang.translateErrorAndReject(deferred, 'wsfunctionnotavailable');
+                    return deferred.promise;
+                }
+            }
             preSets = preSets || {};
             preSets.wstoken = currentSite.token;
             preSets.siteurl = currentSite.siteurl;
