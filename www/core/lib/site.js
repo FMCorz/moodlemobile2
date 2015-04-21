@@ -14,6 +14,8 @@
 
 angular.module('mm.core')
 
+.value('mmCoreWSPrefix', 'local_mobile_')
+
 .constant('mmWSCacheStore', 'wscache')
 
 .config(function($mmSiteProvider, mmWSCacheStore) {
@@ -70,7 +72,7 @@ angular.module('mm.core')
             return;
         }
         siteSchema.stores.push(store);
-    }
+    };
 
     /**
      * Register multiple stores at once.
@@ -84,8 +86,8 @@ angular.module('mm.core')
         var self = this;
         angular.forEach(stores, function(store) {
             self.registerStore(store);
-        })
-    }
+        });
+    };
 
     /**
      * Check if a store is already defined.
@@ -103,7 +105,8 @@ angular.module('mm.core')
         return exists;
     }
 
-    this.$get = function($http, $q, $mmWS, $mmDB, $mmConfig, $log, md5, $cordovaNetwork, $mmLang, $mmUtil, mmWSCacheStore) {
+    this.$get = function($http, $q, $mmWS, $mmDB, $mmConfig, $log, md5, $cordovaNetwork, $mmLang, $mmUtil,
+        mmWSCacheStore, mmCoreWSPrefix) {
 
         /**
          * List of deprecated WS functions with their corresponding NOT deprecated name.
@@ -144,7 +147,7 @@ angular.module('mm.core')
          * Fetch current site info from the Moodle site.
          *
          * @module mm.core
-         * @ngdoc service
+         * @ngdoc method
          * @name $mmSite#fetchSiteInfo
          * @return {Promise}        A promise to be resolved when the site info is retrieved.
          */
@@ -187,7 +190,7 @@ angular.module('mm.core')
          */
         self.isLoggedIn = function() {
             return typeof(currentSite) != 'undefined' && typeof(currentSite.token) != 'undefined' && currentSite.token != '';
-        }
+        };
 
         /**
          * Logouts a user from a site.
@@ -198,7 +201,7 @@ angular.module('mm.core')
          */
         self.logout = function() {
             currentSite = undefined;
-        }
+        };
 
         /**
          * Sets a site as a candidate to be a permanent site (during login).
@@ -211,7 +214,7 @@ angular.module('mm.core')
          */
         self.setCandidateSite = function(siteurl, token) {
             currentSite = new Site(undefined, siteurl, token);
-        }
+        };
 
         /**
          * Delete the candidate site.
@@ -237,7 +240,7 @@ angular.module('mm.core')
          */
         self.setSite = function(id, siteurl, token, infos) {
             currentSite = new Site(id, siteurl, token, infos);
-        }
+        };
 
         /**
          * Deletes a certain site and all its stored data.
@@ -253,7 +256,7 @@ angular.module('mm.core')
                 self.logout();
             }
             return $mmDB.deleteDB('Site-' + siteid);
-        }
+        };
 
         /**
          * Read some data from the Moodle site using WS. Requests are cached by default.
@@ -275,7 +278,7 @@ angular.module('mm.core')
                 preSets.saveToCache = 1;
             }
             return self.request(method, data, preSets);
-        }
+        };
 
         /**
          * Sends some data to the Moodle site using WS. Requests are NOT cached by default.
@@ -297,7 +300,7 @@ angular.module('mm.core')
                 preSets.saveToCache = 0;
             }
             return self.request(method, data, preSets);
-        }
+        };
 
         /**
          * WS request to the site.
@@ -312,6 +315,17 @@ angular.module('mm.core')
          *                    - saveToCache boolean (true) Save the call results to the cache.
          *                    - omitExpires boolean (false) Ignore cache expiry.
          * @return {Promise}
+         * @description
+         *
+         * Sends a webservice request to the site. This method will automatically add the
+         * required parameters and pass it on to the low level API in $mmWS.call().
+         *
+         * Caching is also implemented, when enabled this method will returned a cached
+         * version of itself rather than contacting the server.
+         *
+         * This method is smart which means that it will try to map the method to a
+         * compatibility one if need be, usually that means that it will fallback on
+         * the 'local_mobile_' prefixed function if it is available and the non-prefixed is not.
          */
         self.request = function(method, data, preSets) {
             var deferred = $q.defer();
@@ -321,8 +335,21 @@ angular.module('mm.core')
                 return deferred.promise;
             }
 
-            // Alter the method to be non-deprecated if necessary/
+            // Alter the method to be non-deprecated if necessary.
             method = checkDeprecatedFunction(method);
+
+            // Check if the method is available, use a prefixed version if possible.
+            // We ignore this check when we do not have the site info, as the list of functions is not loaded yet.
+            if (self.getInfo() && !self.wsAvailable(method, false)) {
+                if (self.wsAvailable(mmCoreWSPrefix + method, false)) {
+                    $log.info("Using compatibility WS method '" + mmCoreWSPrefix + method + "'");
+                    method = mmCoreWSPrefix + method;
+                } else {
+                    $log.error("WS function '" + method + "' is not available, even in compatibility mode.");
+                    $mmLang.translateErrorAndReject(deferred, 'wsfunctionnotavailable');
+                    return deferred.promise;
+                }
+            }
 
             preSets = preSets || {};
             preSets.wstoken = currentSite.token;
@@ -357,7 +384,7 @@ angular.module('mm.core')
             });
 
             return deferred.promise;
-        }
+        };
 
         /**
          * Check if a WS is available in the current site.
@@ -366,18 +393,32 @@ angular.module('mm.core')
          * @ngdoc method
          * @name $mmSite#wsAvailable
          * @param  {String} method WS name.
+         * @param  {Boolean=true} checkPrefix When true also checks with the compatibility prefix.
          * @return {Boolean}       True if the WS is available, false otherwise.
+         * @description
+         *
+         * This method checks if a web service function is available. By default it will
+         * also check if there is a compatibility function for it, e.g. a prefixed one.
          */
-        self.wsAvailable = function(method) {
+        self.wsAvailable = function(method, checkPrefix) {
+            checkPrefix = (typeof checkPrefix === 'undefined') ? true : checkPrefix;
+
             if (!self.isLoggedIn() || typeof(currentSite.infos) == 'undefined') {
                 return false;
             }
-            for(var i = 0; i < currentSite.infos.functions.length; i++) {
+
+            for (var i = 0; i < currentSite.infos.functions.length; i++) {
                 var f = currentSite.infos.functions[i];
                 if (f.name == method) {
                     return true;
                 }
             }
+
+            // Let's try again with the compatibility prefix.
+            if (checkPrefix) {
+                return self.wsAvailable(mmCoreWSPrefix + method, false);
+            }
+
             return false;
         };
 

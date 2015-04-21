@@ -574,6 +574,7 @@ angular.module('mm.core')
     });
 });
 angular.module('mm.core')
+.value('mmCoreWSPrefix', 'local_mobile_')
 .constant('mmWSCacheStore', 'wscache')
 .config(function($mmSiteProvider, mmWSCacheStore) {
     var stores = [
@@ -598,13 +599,13 @@ angular.module('mm.core')
             return;
         }
         siteSchema.stores.push(store);
-    }
+    };
         this.registerStores = function(stores) {
         var self = this;
         angular.forEach(stores, function(store) {
             self.registerStore(store);
-        })
-    }
+        });
+    };
         function storeExists(name) {
         var exists = false;
         angular.forEach(siteSchema.stores, function(store) {
@@ -614,7 +615,8 @@ angular.module('mm.core')
         });
         return exists;
     }
-    this.$get = function($http, $q, $mmWS, $mmDB, $mmConfig, $log, md5, $cordovaNetwork, $mmLang, $mmUtil, mmWSCacheStore) {
+    this.$get = function($http, $q, $mmWS, $mmDB, $mmConfig, $log, md5, $cordovaNetwork, $mmLang, $mmUtil,
+        mmWSCacheStore, mmCoreWSPrefix) {
                 var deprecatedFunctions = {
             "moodle_webservice_get_siteinfo": "core_webservice_get_site_info",
             "moodle_enrol_get_users_courses": "core_enrol_get_users_courses",
@@ -657,25 +659,25 @@ angular.module('mm.core')
         };
                 self.isLoggedIn = function() {
             return typeof(currentSite) != 'undefined' && typeof(currentSite.token) != 'undefined' && currentSite.token != '';
-        }
+        };
                 self.logout = function() {
             currentSite = undefined;
-        }
+        };
                 self.setCandidateSite = function(siteurl, token) {
             currentSite = new Site(undefined, siteurl, token);
-        }
+        };
                 self.deleteCandidateSite = function() {
             currentSite = undefined;
         };
                 self.setSite = function(id, siteurl, token, infos) {
             currentSite = new Site(id, siteurl, token, infos);
-        }
+        };
                 self.deleteSite = function(siteid) {
             if(typeof(currentSite) !== 'undefined' && currentSite.id == siteid) {
                 self.logout();
             }
             return $mmDB.deleteDB('Site-' + siteid);
-        }
+        };
                 self.read = function(method, data, preSets) {
             preSets = preSets || {};
             if (typeof(preSets.getFromCache) === 'undefined') {
@@ -685,7 +687,7 @@ angular.module('mm.core')
                 preSets.saveToCache = 1;
             }
             return self.request(method, data, preSets);
-        }
+        };
                 self.write = function(method, data, preSets) {
             preSets = preSets || {};
             if (typeof(preSets.getFromCache) === 'undefined') {
@@ -695,7 +697,7 @@ angular.module('mm.core')
                 preSets.saveToCache = 0;
             }
             return self.request(method, data, preSets);
-        }
+        };
                 self.request = function(method, data, preSets) {
             var deferred = $q.defer();
             if (!self.isLoggedIn()) {
@@ -703,6 +705,16 @@ angular.module('mm.core')
                 return deferred.promise;
             }
             method = checkDeprecatedFunction(method);
+            if (self.getInfo() && !self.wsAvailable(method, false)) {
+                if (self.wsAvailable(mmCoreWSPrefix + method, false)) {
+                    $log.info("Using compatibility WS method '" + mmCoreWSPrefix + method + "'");
+                    method = mmCoreWSPrefix + method;
+                } else {
+                    $log.error("WS function '" + method + "' is not available, even in compatibility mode.");
+                    $mmLang.translateErrorAndReject(deferred, 'wsfunctionnotavailable');
+                    return deferred.promise;
+                }
+            }
             preSets = preSets || {};
             preSets.wstoken = currentSite.token;
             preSets.siteurl = currentSite.siteurl;
@@ -729,16 +741,20 @@ angular.module('mm.core')
                 });
             });
             return deferred.promise;
-        }
-                self.wsAvailable = function(method) {
+        };
+                self.wsAvailable = function(method, checkPrefix) {
+            checkPrefix = (typeof checkPrefix === 'undefined') ? true : checkPrefix;
             if (!self.isLoggedIn() || typeof(currentSite.infos) == 'undefined') {
                 return false;
             }
-            for(var i = 0; i < currentSite.infos.functions.length; i++) {
+            for (var i = 0; i < currentSite.infos.functions.length; i++) {
                 var f = currentSite.infos.functions[i];
                 if (f.name == method) {
                     return true;
                 }
+            }
+            if (checkPrefix) {
+                return self.wsAvailable(mmCoreWSPrefix + method, false);
             }
             return false;
         };
