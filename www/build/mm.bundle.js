@@ -2264,9 +2264,14 @@ angular.module('mm.addons.files')
         if (!$mmSite.canDownloadFiles()) {
             return false;
         }
+        $translate('mm.addons.files.downloading').then(function(str) {
+            $mmUtil.showModalLoading(str);
+        });
         $mmaFiles.getFile(file).then(function(fileEntry) {
+            $mmUtil.closeModalLoading();
             $mmUtil.openFile(fileEntry.toURL());
         }, function() {
+            $mmUtil.closeModalLoading();
             $mmUtil.showErrorModal('mm.addons.files.errorwhiledownloading', true);
         });
     };
