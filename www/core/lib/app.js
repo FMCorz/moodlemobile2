@@ -88,11 +88,10 @@ angular.module('mm.core')
         return exists;
     }
 
-    this.$get = function($mmDB) {
+    this.$get = function($mmDB, $cordovaNetwork) {
 
         var db = $mmDB.getDB(DBNAME, dbschema),
             self = {};
-
 
         /**
          * Returns whether the current window supports child browsers.
@@ -125,6 +124,21 @@ angular.module('mm.core')
             return dbschema;
         };
 
+        /**
+         * Returns whether we are online.
+         *
+         * @module mm.core
+         * @ngdoc method
+         * @name $mmApp#isOnline
+         * @return {Bool} True when we are.
+         * @description
+         * This method allows for us to first check if cordova is loaded,
+         * otherwise exceptions can be thrown when trying on a browser.
+         */
+        self.isOnline = function() {
+            return typeof navigator.connection !== 'undefined' && $cordovaNetwork.isOnline();
+        };
+
         return self;
-    }
+    };
 });
