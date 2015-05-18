@@ -1276,7 +1276,7 @@ angular.module('mm.core')
         });
         return exists;
     }
-    this.$get = function($http, $q, $mmWS, $mmDB, $mmConfig, $log, md5, $cordovaNetwork, $mmLang, $mmUtil,
+    this.$get = function($http, $q, $mmWS, $mmDB, $mmConfig, $log, md5, $mmApp, $mmLang, $mmUtil,
         mmCoreWSCacheStore, mmCoreWSPrefix, mmCoreSessionExpired, $mmEvents) {
         $log = $log.getInstance('$mmSite');
                 var deprecatedFunctions = {
@@ -1566,9 +1566,7 @@ angular.module('mm.core')
             key = md5.createHash(method + ':' + JSON.stringify(data));
             db.get(mmCoreWSCacheStore, key).then(function(entry) {
                 var now = new Date().getTime();
-                try {
-                    preSets.omitExpires = preSets.omitExpires || $cordovaNetwork.isOffline();
-                } catch(err) {}
+                preSets.omitExpires = preSets.omitExpires || !$mmApp.isOnline();
                 if (!preSets.omitExpires) {
                     if (now > entry.expirationtime) {
                         $log.debug('Cached element found, but it is expired');
@@ -1628,7 +1626,7 @@ angular.module('mm.core')
     $mmAppProvider.registerStores(stores);
 })
 .factory('$mmSitesManager', function($http, $q, $mmSite, md5, $mmLang, $mmConfig, $mmApp, $mmWS, $mmUtil, $mmFS,
-                                     $cordovaNetwork, mmCoreSitesStore, mmCoreCurrentSiteStore, $log) {
+                                     mmCoreSitesStore, mmCoreCurrentSiteStore, $log) {
     $log = $log.getInstance('$mmSitesManager');
     var self = {},
         services = {},
@@ -1894,20 +1892,15 @@ angular.module('mm.core')
                 $log.debug('File ' + downloadURL + ' already downloaded.');
                 return fileEntry.toInternalURL();
             }, function() {
-                try {
-                    if ($cordovaNetwork.isOnline()) {
-                        $log.debug('File ' + downloadURL + ' not downloaded. Lets download.');
-                        return $mmWS.downloadFile(downloadURL, path.file).then(function(fileEntry) {
-                            return fileEntry.toInternalURL();
-                        }, function(err) {
-                            return downloadURL;
-                        });
-                    } else {
-                        $log.debug('File ' + downloadURL + ' not downloaded, but the device is offline.');
+                if ($mmApp.isOnline()) {
+                    $log.debug('File ' + downloadURL + ' not downloaded. Lets download.');
+                    return $mmWS.downloadFile(downloadURL, path.file).then(function(fileEntry) {
+                        return fileEntry.toInternalURL();
+                    }, function(err) {
                         return downloadURL;
-                    }
-                } catch(err) {
-                    $log.debug('File ' + downloadURL + ' not downloaded, but cordova is not available.');
+                    });
+                } else {
+                    $log.debug('File ' + downloadURL + ' not downloaded, but the device is offline.');
                     return downloadURL;
                 }
             });
@@ -2298,7 +2291,7 @@ angular.module('mm.core')
 });
 
 angular.module('mm.core')
-.factory('$mmWS', function($http, $q, $log, $mmLang, $cordovaFileTransfer, $cordovaNetwork, $mmFS, mmCoreSessionExpired) {
+.factory('$mmWS', function($http, $q, $log, $mmLang, $cordovaFileTransfer, $mmApp, $mmFS, mmCoreSessionExpired) {
     $log = $log.getInstance('$mmWS');
     var self = {};
         self.call = function(method, data, preSets) {
@@ -2309,13 +2302,10 @@ angular.module('mm.core')
                 typeof(preSets.wstoken) === 'undefined' || typeof(preSets.siteurl) === 'undefined') {
             $mmLang.translateErrorAndReject(deferred, 'mm.core.unexpectederror');
             return deferred.promise;
+        } else if (!$mmApp.isOnline()) {
+            $mmLang.translateErrorAndReject(deferred, 'mm.core.networkerrormsg');
+            return deferred.promise;
         }
-        try {
-            if ($cordovaNetwork.isOffline()) {
-                $mmLang.translateErrorAndReject(deferred, 'mm.core.networkerrormsg');
-                return deferred.promise;
-            }
-        } catch(err) {}
         data.wsfunction = method;
         data.wstoken = preSets.wstoken;
         siteurl = preSets.siteurl + '/webservice/rest/server.php?moodlewsrestformat=json';
@@ -3747,13 +3737,13 @@ angular.module('mm.addons.files')
 });
 
 angular.module('mm.addons.files')
-.factory('$mmaFilesHelper', function($q, $mmUtil, $cordovaNetwork, $ionicActionSheet,
+.factory('$mmaFilesHelper', function($q, $mmUtil, $mmApp, $ionicActionSheet,
         $log, $translate, $mmaFiles, $cordovaCamera, $cordovaCapture) {
     $log = $log.getInstance('$mmaFilesHelper');
     var self = {};
         self.pickAndUploadFile = function() {
         var deferred = $q.defer();
-        if (!$cordovaNetwork.isOnline()) {
+        if (!$mmApp.isOnline()) {
             $mmUtil.showErrorModal('mma.files.errormustbeonlinetoupload', true);
             deferred.reject();
             return deferred.promise;
