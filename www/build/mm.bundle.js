@@ -787,12 +787,9 @@ angular.module('mm.core')
             where = ['component', '=', component];
         }
         return getSiteDb(siteId).then(function(db) {
-            return db.query(mmFilepoolQueueStore, where).then(function(list) {
-                angular.forEach(list, function(fileObject) {
-                    fileObject.stale = true;
-                    db.insert(mmFilepoolStore, fileObject);
-                });
-            });
+            return db.update(mmFilepoolQueueStore, {
+                stale: true
+            }, where);
         });
     };
         self.processQueue = function() {
@@ -845,7 +842,7 @@ angular.module('mm.core')
             fileId = item.fileId,
             fileUrl = item.url,
             links = item.links || [];
-        $log.debug('Processing queue item: ' + siteId + ', ' + itemId);
+        $log.debug('Processing queue item: ' + siteId + ', ' + fileId);
         return getSiteDb(siteId).then(function(db) {
             db.get(mmFilepoolStore, fileId).then(function(fileObject) {
                 if (fileObject && !fileObject.stale) {
@@ -874,6 +871,7 @@ angular.module('mm.core')
                         if (errorObject.http_status === 401) {
                             dropFromQueue = true;
                         } else if (!errorObject.http_status) {
+                            dropFromQueue = true;
                         } else {
                             dropFromQueue = true;
                         }
