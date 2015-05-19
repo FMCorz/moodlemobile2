@@ -429,15 +429,16 @@ angular.module('mm.core')
      *
      * See {@link $mmFilepool#_getInternalUrlById} for the type of local URL returned.
      */
-    self.downloadUrl = function(siteId, fileUrl) {
+    self.downloadUrl = function(siteId, fileUrl, component, componentId) {
         var fileId = self._getFileIdByUrl(fileUrl),
-            now = new Date();
+            now = new Date(),
+            promise;
 
         if (!$mmFS.isAvailable()) {
             return $q.reject();
         }
 
-        return self._hasFileInPool(siteId, fileId).then(function(fileObject) {
+        promise = self._hasFileInPool(siteId, fileId).then(function(fileObject) {
 
             if (typeof fileObject === 'undefined') {
                 // We do not have the file, download and add to pool.
@@ -455,6 +456,13 @@ angular.module('mm.core')
 
             // The file is not in the pool just yet.
             return self._downloadForPoolByUrl(siteId, fileUrl);
+        });
+
+        return promise.then(function(response) {
+            if (typeof component !== 'undefined') {
+                self._addFileLink(siteId, fileId, component, componentId);
+            }
+            return response;
         });
     };
 
