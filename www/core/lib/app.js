@@ -37,12 +37,17 @@ angular.module('mm.core')
 
     /** Define the app storage schema. */
     var DBNAME = 'MoodleMobile',
+        indexes = [],
         dbschema = {
             stores: []
         },
         dboptions = {
             autoSchema: true
         };
+
+    this.registerIndexes = function(newIndexes) {
+        indexes = indexes.concat(newIndexes);
+    };
 
     /**
      * Register a store schema.
@@ -90,17 +95,29 @@ angular.module('mm.core')
         return exists;
     }
 
-    this.$get = function($mmDB, $cordovaNetwork) {
+    this.$get = function($mmPouch, $mmDB, $cordovaNetwork, $q) {
 
-        var db = $mmDB.getDB(DBNAME, dbschema, dboptions),
+        var db = $mmPouch.get(DBNAME),
+        // var db = $mmDB.getDB(DBNAME, dbschema, dboptions),
             self = {};
+
+        // @todo Check the result of this before sending out the DB object.
+        function init() {
+            var promises = [];
+            angular.forEach(indexes, function(index) {
+                index._id = '_design/' + index._id;
+                promises.push(db.db.put(index));
+            });
+            return $q.all(promises);
+        }
+        init();
 
         /**
          * Get the application global database.
          * @return {Object} App's DB.
          */
         self.getDB = function() {
-            return db;
+            return db.db;
         };
 
         /**

@@ -19,8 +19,10 @@ angular.module('mm.core')
 .constant('mmFilepoolStore', 'filepool')
 .constant('mmFilepoolQueueStore', 'files_queue')
 .constant('mmFilepoolLinksStore', 'files_links')
+.constant('mmFilepoolQueueStorePrefix', 'mmFilepool:queue:')
+.constant('mmFilepoolQueueStoreSortorderIndex', 'mmFilepool:queue:sortorder')
 
-.config(function($mmAppProvider, $mmSiteProvider, mmFilepoolStore, mmFilepoolLinksStore, mmFilepoolQueueStore) {
+.config(function($mmAppProvider, $mmSiteProvider, mmFilepoolStore, mmFilepoolLinksStore, mmFilepoolQueueStoreSortorderIndex) {
     var siteStores = [
         {
             // File store.
@@ -65,54 +67,30 @@ angular.module('mm.core')
             ]
         },
     ];
-    var appStores = [
-        {
-            // Files queue.
-            //
-            // Each entry should contain:
-            // - siteId: The site ID.
-            // - fileId: A hash of the file info.
-            // - url: URL to download the file.
-            // - added: Timestamp (in milliseconds) at which the file was added to the queue.
-            // - priority: Indicates which files should be treated first. Maximum value is 999.
-            // - links: Array of objects containing component and ID to create links once the file has been processed.
-            name: mmFilepoolQueueStore,
-            keyPath: ['siteId', 'fileId'],
-            indexes: [
-                {
-                    name: 'siteId',
-                },
-                {
-                    name: 'sortorder',
-                    generator: function(obj) {
-                        // Creates an index to sort the queue items by priority, sort is ascending.
-                        // The oldest are considered to be the most important ones.
-                        // The additional priority argument allows to bump any queue item on top of the queue.
-                        // The index will look as follow:
-                        //    [999 - priority] + "-" + timestamp
-                        //    "999-1431491086913": item without priority.
-                        //    "900-1431491086913": item with priority of 99.
-                        //    "000-1431491086913": item with max priority.
 
-                        var sortorder = parseInt(obj.added, 10),
-                            priority = 999 - Math.max(0, Math.min(parseInt(obj.priority || 0, 10), 999)),
-                            padding = "000";
+    var index = {
+        _id: mmFilepoolQueueStoreSortorderIndex,
+        views: {}
+    };
+    index.views[mmFilepoolQueueStoreSortorderIndex] = {
+        map: function(doc) {
+            var sortorder = parseInt(doc.added, 10),
+                priority = 999 - Math.max(0, Math.min(parseInt(doc.priority || 0, 10), 999)),
+                padding = "000";
 
-                        // Convert to strings.
-                        sortorder = "" + sortorder;
-                        priority = "" + priority;
+            // Convert to strings.
+            sortorder = "" + sortorder;
+            priority = "" + priority;
 
-                        // Final format.
-                        priority = padding.substring(0, padding.length - priority.length) + priority;
-                        sortorder = priority + '-' + sortorder;
+            // Final format.
+            priority = padding.substring(0, padding.length - priority.length) + priority;
+            sortorder = priority + '-' + sortorder;
 
-                        return sortorder;
-                    }
-                }
-            ]
-        }
-    ];
-    $mmAppProvider.registerStores(appStores);
+            emit(sortorder);
+        }.toString()
+    };
+
+    $mmAppProvider.registerIndexes([index]);
     $mmSiteProvider.registerStores(siteStores);
 })
 
@@ -142,7 +120,8 @@ angular.module('mm.core')
  * {@link $mmFilepool#_getFileIdByUrl}.
  */
 .factory('$mmFilepool', function($q, $log, $timeout, $mmApp, $mmFS, $mmWS, $mmSitesManager, md5, mmFilepoolStore,
-        mmFilepoolLinksStore, mmFilepoolQueueStore, mmFilepoolFolder, mmFilepoolQueueProcessInterval) {
+        mmFilepoolLinksStore, mmFilepoolQueueStorePrefix, mmFilepoolFolder, mmFilepoolQueueProcessInterval,
+        mmFilepoolQueueStoreSortorderIndex) {
 
     $log = $log.getInstance('$mmFilepool');
 
@@ -260,6 +239,10 @@ angular.module('mm.core')
         });
     };
 
+    self._getQueueFileKey = function(siteId, fileId) {
+        return mmFilepoolQueueStorePrefix + siteId + ':' + fileId;
+    };
+
     /**
      * Add an entry to queue using a URL.
      *
@@ -290,7 +273,7 @@ angular.module('mm.core')
             };
         }
 
-        return db.get(mmFilepoolQueueStore, [siteId, fileId]).then(function(fileObject) {
+        return db.get(self._getQueueFileKey(siteId, fileId)).then(function(fileObject) {
             var foundLink = false,
                 update = false;
 
@@ -317,13 +300,12 @@ angular.module('mm.core')
                 if (update) {
                     // Update only when required.
                     $log.debug('Updating file ' + fileId + ' which is already in queue');
-                    return db.insert(mmFilepoolQueueStore, fileObject);
+                    return db.put(fileObject);
                 }
 
                 var response = (function() {
-                    // Return a resolved promise containing the keyPath such as db.insert() does it.
                     var deferred = $q.defer();
-                    deferred.resolve([fileObject.siteId, fileObject.fileId]);
+                    deferred.resolve();
                     return deferred.promise;
                 })();
 
@@ -339,7 +321,8 @@ angular.module('mm.core')
 
         function addToQueue() {
             $log.debug('Adding ' + fileId + ' to the queue');
-            return db.insert(mmFilepoolQueueStore, {
+            return db.put({
+                _id: self._getQueueFileKey(siteId, fileId),
                 siteId: siteId,
                 fileId: fileId,
                 added: now.getTime(),
@@ -915,15 +898,17 @@ angular.module('mm.core')
      * @return {Promise} Resolved on success. Rejected on failure.
      */
     self._processImportantQueueItem = function() {
-        return $mmApp.getDB().query(mmFilepoolQueueStore, undefined, 'sortorder', undefined, 1)
-        .then(function(items) {
-            var item = items.pop();
-            if (!item) {
+        return $mmApp.getDB().query(mmFilepoolQueueStoreSortorderIndex, {
+            include_docs: true,
+            limit: 1
+        })
+        .then(function(result) {
+            var item;
+            if (result.total_rows < 1) {
                 return $q.reject(ERR_QUEUE_IS_EMPTY);
             }
+            item = result.rows.pop().doc;
             return self._processQueueItem(item);
-        }, function() {
-            return $q.reject(ERR_QUEUE_IS_EMPTY);
         });
     };
 
@@ -1058,7 +1043,7 @@ angular.module('mm.core')
      * @protected
      */
     self._removeFromQueue = function(siteId, fileId) {
-        return $mmApp.getDB().remove(mmFilepoolQueueStore, [siteId, fileId]);
+        return $mmApp.getDB().remove(self._getQueueFileKey(siteId, fileId));
     };
 
     /**

@@ -14,17 +14,17 @@
 
 angular.module('mm.core')
 
-.constant('mmCoreConfigStore', 'config')
+.constant('mmCoreConfigStorePrefix', 'mmConfig:')
 
-.config(function($mmAppProvider, mmCoreConfigStore) {
-    var stores = [
-        {
-            name: mmCoreConfigStore,
-            keyPath: 'name'
-        }
-    ];
-    $mmAppProvider.registerStores(stores);
-})
+// .config(function($mmAppProvider, mmCoreConfigStore) {
+    // var stores = [
+    //     {
+    //         name: mmCoreConfigStore,
+    //         keyPath: 'name'
+    //     }
+    // ];
+    // $mmAppProvider.registerStores(stores);
+// })
 
 /**
  * Factory to provide access to app config and settings. It should not be abused into a temporary storage.
@@ -35,7 +35,7 @@ angular.module('mm.core')
  * @description
  * Provides access to the app settings.
  */
-.factory('$mmConfig', function($http, $q, $log, $mmApp, mmCoreConfigStore) {
+.factory('$mmConfig', function($http, $q, $log, $mmApp, mmCoreConfigStorePrefix) {
 
     $log = $log.getInstance('$mmConfig');
 
@@ -57,7 +57,7 @@ angular.module('mm.core')
         }, deferred.reject);
 
         return deferred.promise;
-    };
+    }
 
     /**
      * Get an app setting.
@@ -89,9 +89,9 @@ angular.module('mm.core')
                 value = self.config[name];
 
             if (typeof value == 'undefined') {
-                $mmApp.getDB().get(mmCoreConfigStore, name).then(function(entry) {
+                $mmApp.getDB().get(self._getConfigKey(name)).then(function(entry) {
                     deferred.resolve(entry.value);
-                }, function() {
+                }).catch(function() {
                     if (typeof defaultValue != 'undefined') {
                         deferred.resolve(defaultValue);
                     } else {
@@ -104,6 +104,10 @@ angular.module('mm.core')
 
             return deferred.promise;
         }
+    };
+
+    self._getConfigKey = function(name) {
+        return mmCoreConfigStorePrefix + name;
     };
 
     /**
@@ -136,11 +140,22 @@ angular.module('mm.core')
                 fromStatic = self.config[name];
 
             if (typeof(fromStatic) === 'undefined') {
-                return $mmApp.getDB().insert(mmCoreConfigStore, {name: name, value: value});
+                return $mmApp.getDB().get(self._getConfigKey(name)).then(function(doc) {
+                    doc.value = value;
+                    return $mmApp.getDB().put(doc);
+                }).catch(function() {
+                    doc = {
+                        _id: self._getConfigKey(name),
+                        name: name,
+                        value: value
+                    };
+                    return $mmApp.getDB().put(doc);
+                });
+                // return $mmApp.getDB().insert(mmCoreConfigStore, {name: name, value: value});
             }
 
             $log.error('Cannot save static config setting \'' + name + '\'.');
-            deferred = $q.defer()
+            deferred = $q.defer();
             deferred.reject();
             return deferred.promise;
         }
@@ -175,11 +190,13 @@ angular.module('mm.core')
                 fromStatic = self.config[name];
 
             if (typeof(fromStatic) === 'undefined') {
-                return $mmApp.getDB().remove(mmCoreConfigStore, name);
+                return $mmApp.getDB().get(self._getConfigKey(name)).then(function(doc) {
+                    return $mmApp.getDB().remove(doc);
+                });
             }
 
             $log.error('Cannot delete static config setting \'' + name + '\'.');
-            deferred = $q.defer()
+            deferred = $q.defer();
             deferred.reject();
             return deferred.promise;
         }
