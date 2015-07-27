@@ -327,8 +327,7 @@ angular.module('mm.core')
          * @return {Promise} A promise to be resolved when the site info is retrieved.
          */
         Site.prototype.fetchSiteInfo = function() {
-            var deferred = $q.defer(),
-                site = this;
+            var site = this;
 
             // get_site_info won't be cached.
             var preSets = {
@@ -336,13 +335,9 @@ angular.module('mm.core')
                 saveToCache: 0
             };
 
-            site.read('core_webservice_get_site_info', {}, preSets).then(deferred.resolve, function(error) {
-                site.read('moodle_webservice_get_siteinfo', {}, preSets).then(deferred.resolve, function(error) {
-                    deferred.reject(error);
-                });
+            return site.read('core_webservice_get_site_info', {}, preSets).catch(function(error) {
+                return site.read('moodle_webservice_get_siteinfo', {}, preSets);
             });
-
-            return deferred.promise;
         };
 
         /**
@@ -418,8 +413,7 @@ angular.module('mm.core')
          * the 'local_mobile_' prefixed function if it is available and the non-prefixed is not.
          */
         Site.prototype.request = function(method, data, preSets) {
-            var deferred = $q.defer(),
-                site = this;
+            var site = this;
             data = data || {};
 
             // Get the method to use based on the available ones.
@@ -433,8 +427,7 @@ angular.module('mm.core')
                     method = mmCoreWSPrefix + method;
                 } else {
                     $log.error("WS function '" + method + "' is not available, even in compatibility mode.");
-                    $mmLang.translateAndRejectDeferred(deferred, 'mm.core.wsfunctionnotavailable');
-                    return deferred.promise;
+                    return $mmLang.translateAndReject('mm.core.wsfunctionnotavailable');
                 }
             }
 
@@ -445,9 +438,9 @@ angular.module('mm.core')
             // Enable text filtering.
             data.moodlewssettingfilter = true;
 
-            getFromCache(site, method, data, preSets).then(function(data) {
-                deferred.resolve(data);
-            }, function() {
+            return getFromCache(site, method, data, preSets).then(function(data) {
+                return data;
+            }).catch(function() {
                 // Do not pass those options to the core WS factory.
                 var wsPreSets = angular.copy(preSets);
                 delete wsPreSets.getFromCache;
@@ -459,7 +452,7 @@ angular.module('mm.core')
 
                 // TODO: Sync
 
-                $mmWS.call(method, data, wsPreSets).then(function(response) {
+                return $mmWS.call(method, data, wsPreSets).then(function(response) {
 
                     if (preSets.saveToCache) {
                         saveToCache(site, method, data, response, preSets.cacheKey);
@@ -467,33 +460,27 @@ angular.module('mm.core')
 
                     // We pass back a clone of the original object, this may
                     // prevent errors if in the callback the object is modified.
-                    deferred.resolve(angular.copy(response));
-                }, function(error) {
+                    return angular.copy(response);
+                }).catch(function(error) {
                     if (error === mmCoreSessionExpired) {
                         // Session expired, trigger event.
-                        $mmLang.translateAndRejectDeferred(deferred, 'mm.core.lostconnection');
                         $mmEvents.trigger(mmCoreEventSessionExpired, site.id);
+                        return $mmLang.translateAndReject('mm.core.lostconnection');
                     } else if (error === mmCoreUserDeleted) {
                         // User deleted, trigger event.
-                        $mmLang.translateErrorAndReject(deferred, 'mm.core.userdeleted');
                         $mmEvents.trigger(mmCoreEventUserDeleted, {siteid: site.id, params: data});
+                        return $mmLang.translateAndReject('mm.core.userdeleted');
                     } else if (typeof preSets.emergencyCache !== 'undefined' && !preSets.emergencyCache) {
                         $log.debug('WS call ' + method + ' failed. Emergency cache is forbidden, rejecting.');
-                        deferred.reject(error);
+                        return $q.reject(error);
                     } else {
                         $log.debug('WS call ' + method + ' failed. Trying to use the emergency cache.');
                         preSets.omitExpires = true;
                         preSets.getFromCache = true;
-                        getFromCache(site, method, data, preSets).then(function(data) {
-                            deferred.resolve(data);
-                        }, function() {
-                            deferred.reject(error);
-                        });
+                        return getFromCache(site, method, data, preSets);
                     }
                 });
             });
-
-            return deferred.promise;
         };
 
         /**
@@ -805,16 +792,13 @@ angular.module('mm.core')
         function getFromCache(site, method, data, preSets) {
             var result,
                 db = site.db,
-                deferred = $q.defer(),
                 id,
                 promise;
 
             if (!db) {
-                deferred.reject();
-                return deferred.promise;
+                return $q.reject();
             } else if (!preSets.getFromCache) {
-                deferred.reject();
-                return deferred.promise;
+                return $q.reject();
             }
 
             id = md5.createHash(method + ':' + JSON.stringify(data));
@@ -831,7 +815,7 @@ angular.module('mm.core')
                 promise = db.get(mmCoreWSCacheStore, id);
             }
 
-            promise.then(function(entry) {
+            return promise.then(function(entry) {
                 var now = new Date().getTime();
 
                 preSets.omitExpires = preSets.omitExpires || !$mmApp.isOnline();
@@ -839,24 +823,18 @@ angular.module('mm.core')
                 if (!preSets.omitExpires) {
                     if (now > entry.expirationtime) {
                         $log.debug('Cached element found, but it is expired');
-                        deferred.reject();
-                        return;
+                        return $q.reject();
                     }
                 }
 
                 if (typeof entry != 'undefined' && typeof entry.data != 'undefined') {
                     var expires = (entry.expirationtime - now) / 1000;
                     $log.info('Cached element found, id: ' + id + ' expires in ' + expires + ' seconds');
-                    deferred.resolve(entry.data);
-                    return;
+                    return entry.data;
                 }
 
-                deferred.reject();
-            }, function() {
-                deferred.reject();
+                return $q.reject();
             });
-
-            return deferred.promise;
         }
 
         /**
@@ -871,14 +849,12 @@ angular.module('mm.core')
          */
         function saveToCache(site, method, data, response, cacheKey) {
             var db = site.db,
-                deferred = $q.defer(),
                 id = md5.createHash(method + ':' + JSON.stringify(data));
 
             if (!db) {
-                deferred.reject();
+                return $q.reject();
             } else {
-                $mmConfig.get('cache_expiration_time').then(function(cacheExpirationTime) {
-
+                return $mmConfig.get('cache_expiration_time').then(function(cacheExpirationTime) {
                     var entry = {
                         id: id,
                         data: response
@@ -887,13 +863,10 @@ angular.module('mm.core')
                     if (cacheKey) {
                         entry.key = cacheKey;
                     }
-                    db.insert(mmCoreWSCacheStore, entry);
-                    deferred.resolve();
+                    return db.insert(mmCoreWSCacheStore, entry);
 
-                }, deferred.reject);
+                });
             }
-
-            return deferred.promise;
         }
 
         /**
