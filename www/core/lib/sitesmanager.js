@@ -279,7 +279,7 @@ angular.module('mm.core')
                     // Turn candidate site into current site.
                     candidateSite.setId(siteid);
                     candidateSite.setInfo(infos);
-                    currentSite = candidateSite;
+                    self.setCurrentSite(candidateSite);
                     // Store session.
                     self.login(siteid);
                     $mmEvents.trigger(mmCoreEventSiteAdded);
@@ -403,7 +403,7 @@ angular.module('mm.core')
         var deferred = $q.defer();
 
         self.getSite(siteid).then(function(site) {
-            currentSite = site;
+            self.setCurrentSite(site);
             self.login(siteid);
             // Update site info. Resolve the promise even if the update fails.
             self.updateSiteInfo(siteid).finally(function() {
@@ -430,6 +430,19 @@ angular.module('mm.core')
      */
     self.getCurrentSite = function() {
         return currentSite;
+    };
+
+    /**
+     * Set current site.
+     *
+     * @module mm.core
+     * @ngdoc method
+     * @name $mmSitesManager#setCurrentSite
+     * @param {Object} site New current site.
+     * @protected
+     */
+    self.setCurrentSite = function(site) {
+        currentSite = site;
     };
 
     /**
@@ -600,7 +613,7 @@ angular.module('mm.core')
      * @return {Promise} Promise to be resolved when the user is logged out.
      */
     self.logout = function() {
-        currentSite = undefined;
+        self.setCurrentSite(undefined);
         $mmEvents.trigger(mmCoreEventLogout);
         return $mmApp.getDB().remove(mmCoreCurrentSiteStore, 1);
     }
