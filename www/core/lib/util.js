@@ -539,20 +539,16 @@ angular.module('mm.core')
          * @return {Promise} Promise to be resolved when the list is retrieved.
          */
         self.getCountries = function() {
-            var deferred = $q.defer();
-
             if (typeof(countries) !== 'undefined') {
-                deferred.resolve(countries);
+                return $q.when(countries);
             } else {
-                self.readJSONFile('core/assets/countries.json').then(function(data) {
+                return self.readJSONFile('core/assets/countries.json').then(function(data) {
                     countries = data;
-                    deferred.resolve(countries);
+                   return countries;
                 }, function(){
-                    deferred.resolve();
+                    // Never reject. Resolve with undefined.
                 });
             }
-
-            return deferred.promise;
         };
 
         /**
@@ -690,7 +686,7 @@ angular.module('mm.core')
                 if (secs) {
                     return osecs;
                 }
-                return translations('mm.core.now');
+                return translations['mm.core.now'];
             });
         };
 
