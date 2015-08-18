@@ -126,7 +126,7 @@ describe('$mmLang', function() {
                     expect(true).toEqual(false);
                 });
 
-                setTimeout(function() {
+                mmFlush(function() {
                     $httpBackend.flush();
                     $timeout.flush();
                 }, 100);
@@ -140,8 +140,10 @@ describe('$mmLang', function() {
                 done();
             });
 
-            $timeout.flush();
-            $httpBackend.flush();
+            mmFlush(function() {
+                $timeout.flush();
+                $httpBackend.flush();
+            }, 100);
         });
 
     });
@@ -158,7 +160,8 @@ describe('$mmLang', function() {
                 expect(extrastring).toEqual('extra');
 
                 // Add the extra strings folder.
-                return $mmLang.registerLanguageFolder('extralang').then(function() {
+                var p = $mmLang.registerLanguageFolder('extralang').then(function() {
+
                     // Check that now the extra strings are available.
                     p2 = $translate('extra').then(function(extrastring) {
                         expect(extrastring).toEqual(extraStrings['extra']);
@@ -166,20 +169,24 @@ describe('$mmLang', function() {
                         expect(true).toEqual(false);
                     });
 
+                    mmFlush($timeout.flush, 100);
                     return p2;
 
                 }).catch(function() {
                     expect(true).toEqual(false);
                 });
 
+                mmFlush($timeout.flush, 100);
+                return p;
+
             }).catch(function() {
-                expect(true).toEqual(falfse);
+                expect(true).toEqual(false);
             }).finally(function() {
                 console.log(' ***** FINISH $mmLang registerLanguageFolder ***** ');
                 done();
             });
 
-            $timeout.flush();
+            mmFlush($timeout.flush, 100);
         });
 
     });

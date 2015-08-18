@@ -108,7 +108,7 @@ describe('$mmApp', function() {
             });
 
             $timeout.flush();
-            setTimeout($timeout.flush, 100);
+            mmFlush($timeout.flush, 100);
         });
 
     });

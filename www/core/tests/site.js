@@ -177,7 +177,7 @@ describe('$mmSite', function() {
 
         db.insert(fakeStoreName, {id: 1, name: 'a'}).then(function() {
 
-            setTimeout(timeout.flush, 100);
+            mmFlush(timeout.flush, 100);
 
             // Check we can retrieve the data.
             return db.get(fakeStoreName, 1).then(function(data) {
@@ -191,7 +191,7 @@ describe('$mmSite', function() {
             done();
         });
 
-        setTimeout(timeout.flush, 100);
+        mmFlush(timeout.flush, 100);
     });
 
     it('a site db can be deleted', function(done) {
@@ -202,24 +202,25 @@ describe('$mmSite', function() {
         // Lets insert something in the db (fake store).
         db.insert(fakeStoreName, {id: 2, a: 'saas'}).then(function() {
 
-            setTimeout(timeout.flush, 100);
-
             // Delete DB.
-            return site.deleteDB().then(function() {
+            var p = site.deleteDB().then(function() {
                 // Re-create DB (otherwise we cannot query it).
                 site.setId('siteId');
                 db = site.getDb();
 
-                setTimeout(timeout.flush, 100);
 
                 // Try to get the value.
-                return db.get(fakeStoreName, 2).then(function() {
+                var p = db.get(fakeStoreName, 2).then(function() {
                     // Failed test, value is still there.
                     expect(false).toEqual(true);
                 }).catch(function() {
                     // Not found, test succeeded.
                 });
+                mmFlush(timeout.flush, 500);
+                return p;
             });
+            mmFlush(timeout.flush, 500);
+            return p;
         }).catch(function() {
             // Failed test.
             expect(false).toEqual(true);
@@ -228,7 +229,7 @@ describe('$mmSite', function() {
             done();
         });
 
-        setTimeout(timeout.flush, 100);
+        mmFlush(timeout.flush, 500);
     });
 
     it('a site can get data from WS if function is available', function(done) {
@@ -249,22 +250,24 @@ describe('$mmSite', function() {
             infos.functions.push({name: 'some_read_ws'});
             site.setInfo(infos);
 
-            setTimeout(timeout.flush, 100);
-            setTimeout(httpBackend.flush, 200);
 
-            return mmSite.read('some_read_ws', {}).then(function(data) {
+            var p = mmSite.read('some_read_ws', {}).then(function(data) {
                 expect(data.success).toEqual(true);
             }).catch(function() {
                 // Failed test, call should fail since function isn't available.
                 expect(false).toEqual(true);
             });
+            mmFlush(timeout.flush, 100);
+            mmFlush(httpBackend.flush, 200);
+
+            return p;
         }).finally(function() {
             // Delete DB to have a clean DB for next tests (or re-execute this one).
             site.deleteDB().finally(function() {
                 console.log(' ***** FINISH $mmSite read WS ***** ');
                 done();
             });
-            setTimeout(timeout.flush, 100);
+            mmFlush(timeout.flush, 100);
         });
 
         httpBackend.flush();
@@ -288,13 +291,13 @@ describe('$mmSite', function() {
         // Call WS so response is cached.
         mmSite.read('new_read_ws', {}).then(function() {
             // Wait 50 ms for saveToCache to finish (it doesn't block data return).
-            setTimeout(timeout.flush, 50);
+            mmFlush(timeout.flush, 50);
             return timeout(function() {
 
                 // Make http request to fail now.
                 mockRequest.respond(500);
 
-                setTimeout(function() {
+                mmFlush(function() {
                     timeout.flush();
                     httpBackend.flush();
                 }, 100);
@@ -306,7 +309,7 @@ describe('$mmSite', function() {
                 }).catch(function() {
                     // We've verified that WS is now failing. Let's try to get the response from cache.
 
-                    setTimeout(timeout.flush, 100);
+                    mmFlush(timeout.flush, 100);
 
                     return mmSite.read('new_read_ws', {}).then(function(data) {
                         expect(data.success).toBe(true);
@@ -326,11 +329,11 @@ describe('$mmSite', function() {
                 console.log(' ***** FINISH $mmSite read cache ***** ');
                 done();
             });
-            setTimeout(timeout.flush, 100);
+            mmFlush(timeout.flush, 100);
         });
 
         timeout.flush();
-        setTimeout(httpBackend.flush, 100);
+        mmFlush(httpBackend.flush, 100);
     });
 
     it('site write doesn\'t store data in cache', function(done) {
@@ -353,7 +356,7 @@ describe('$mmSite', function() {
             // Make http request to fail now.
             mockRequest.respond(500);
 
-            setTimeout(timeout.flush, 100); // We don't need httpBackend.flush, I don't know why :S
+            mmFlush(timeout.flush, 100); // We don't need httpBackend.flush, I don't know why :S
 
             return mmSite.write('new_write_ws', {}).then(function() {
                 // Failed test, request should have failed.
@@ -371,11 +374,11 @@ describe('$mmSite', function() {
                 console.log(' ***** FINISH $mmSite write - doesn\'t store cache ***** ');
                 done();
             });
-            setTimeout(timeout.flush, 100);
+            mmFlush(timeout.flush, 100);
         });
 
         timeout.flush();
-        setTimeout(httpBackend.flush, 100);
+        mmFlush(httpBackend.flush, 100);
     });
 
     it('a site cache can be invalidated', function(done) {
@@ -397,28 +400,31 @@ describe('$mmSite', function() {
             expect(data.a).toEqual('b');
 
             // Wait 50 ms for saveToCache to finish (it doesn't block data return).
-            setTimeout(timeout.flush, 50);
-            return timeout(function() {
+            var p = timeout(function() {
 
                 // Invalidate cache.
-                setTimeout(timeout.flush, 100); // Flush get all to invalidate.
-                setTimeout(timeout.flush, 200); // Flush invalidate.
+                // mmFlush(timeout.flush, 200); // Flush invalidate.
 
-                return mmSite.invalidateWsCache().then(function() {
+                var p = mmSite.invalidateWsCache().then(function() {
 
                     // Make http request to fail now.
                     mockRequest.respond(200, {a: 'new_value'});
 
                     // Perform request again and check that it gets the new value.
-                    setTimeout(function() {
+                    var p = mmSite.read('new_read_ws', {}).then(function(data) {
+                        expect(data.a).toEqual('new_value');
+                    });
+                    mmFlush(function() {
                         timeout.flush();
                         httpBackend.flush();
                     }, 100);
-                    return mmSite.read('new_read_ws', {}).then(function(data) {
-                        expect(data.a).toEqual('new_value');
-                    });
+                    return p;
                 });
+                mmFlush(timeout.flush, 100); // Flush get all to invalidate.
+                return p;
             });
+            mmFlush(timeout.flush, 50);
+            return p;
         }).catch(function() {
             // Failed test, request should be successful.
             expect(false).toEqual(true);
@@ -428,10 +434,10 @@ describe('$mmSite', function() {
                 console.log(' ***** FINISH $mmSite invalidate cache ***** ');
                 done();
             });
-            setTimeout(timeout.flush, 100);
+            mmFlush(timeout.flush, 100);
         });
 
-        setTimeout(function() {
+        mmFlush(function() {
             httpBackend.flush();
         }, 100);
     });
