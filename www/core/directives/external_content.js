@@ -31,21 +31,29 @@ angular.module('mm.core')
  * Attributes accepted:
  *     - siteid: Reference to the site ID if different than the site the user is connected to.
  */
-.directive('mmExternalContent', function($log, $mmFilepool, $mmSite, $mmSitesManager, $mmUtil) {
+.directive('mmExternalContent', function($q, $log, $mmFilepool, $mmSite, $mmSitesManager, $mmUtil) {
     $log = $log.getInstance('mmExternalContent');
 
     function handleExternalContent(siteId, dom, targetAttr, url, component, componentId) {
 
         if (!url || !$mmUtil.isPluginFileUrl(url)) {
+            if (dom.tagName === 'SOURCE') {
+                // Restoring original src.
+                e = document.createElement('source');
+                e.setAttribute('src', url);
+                e.setAttribute('type', dom.getAttribute('type'));
+                dom.parentNode.insertBefore(e, dom);
+            }
             $log.debug('Ignoring non-pluginfile URL: ' + url);
             return;
         }
 
         // Get the webservice pluginfile URL, we ignore failures here.
         $mmSitesManager.getSite(siteId).then(function(site) {
-            var fn;
+            var fn,
+                e;
 
-            if (targetAttr === 'src') {
+            if (targetAttr === 'src' && dom.tagName !== 'SOURCE') {
                 fn = $mmFilepool.getSrcByUrl;
             } else {
                 fn = $mmFilepool.getUrlByUrl;
@@ -53,7 +61,15 @@ angular.module('mm.core')
 
             fn(siteId, url, component, componentId).then(function(finalUrl) {
                 $log.debug('Using URL ' + finalUrl + ' for ' + url);
-                dom.setAttribute(targetAttr, finalUrl);
+                if (dom.tagName === 'SOURCE' && dom.parentNode.tagName === 'AUDIO') {
+                    // The browser does not catch changes in SRC, we need to add a new source.
+                    e = document.createElement('source');
+                    e.setAttribute('src', finalUrl);
+                    e.setAttribute('type', dom.getAttribute('type'));
+                    dom.parentNode.insertBefore(e, dom);
+                } else {
+                    dom.setAttribute(targetAttr, finalUrl);
+                }
             });
         });
     }
@@ -67,21 +83,27 @@ angular.module('mm.core')
             var dom = element[0],
                 component = attrs.component,
                 componentId = attrs.componentId,
+                sourceAttr,
                 targetAttr,
-                observe = false,
-                url;
+                observe = false;
 
             if (dom.tagName === 'A') {
                 targetAttr = 'href';
+                sourceAttr = 'href';
                 if (attrs.hasOwnProperty('ngHref')) {
                     observe = true;
                 }
 
             } else if (dom.tagName === 'IMG') {
                 targetAttr = 'src';
+                sourceAttr = 'src';
                 if (attrs.hasOwnProperty('ngSrc')) {
                     observe = true;
                 }
+
+            } else if (dom.tagName === 'SOURCE') {
+                targetAttr = 'src';
+                sourceAttr = 'targetSrc';
 
             } else {
                 // Unsupported tag.
@@ -90,14 +112,14 @@ angular.module('mm.core')
             }
 
             if (observe) {
-                attrs.$observe(targetAttr, function(url) {
+                attrs.$observe(sourceAttr, function(url) {
                     if (!url) {
                         return;
                     }
                     handleExternalContent(scope.siteid || $mmSite.getId(), dom, targetAttr, url, component, componentId);
                 });
             } else {
-                handleExternalContent(scope.siteid || $mmSite.getId(), dom, targetAttr, attrs[targetAttr], component, componentId);
+                handleExternalContent(scope.siteid || $mmSite.getId(), dom, targetAttr, attrs[sourceAttr], component, componentId);
             }
 
         }

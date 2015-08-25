@@ -116,6 +116,24 @@ angular.module('mm.core')
                 }
             });
 
+            // Walk through the content to find sources, and add our directive.
+            angular.forEach(dom.find('source'), function(source) {
+                // We need to remove the src attribute, otherwise the browser only observes
+                // that one source before we could treat them.
+                source.setAttribute('target-src', source.getAttribute('src'));
+                source.removeAttribute('src');
+                source.setAttribute('mm-external-content', '');
+                if (component) {
+                    source.setAttribute('component', component);
+                    if (componentId) {
+                        source.setAttribute('component-id', componentId);
+                    }
+                }
+                if (siteId) {
+                    source.setAttribute('siteid', siteId);
+                }
+            });
+
             // Walk through the content to find the links and add our directive to it.
             angular.forEach(dom.find('a'), function(anchor) {
                 anchor.setAttribute('mm-external-content', '');
